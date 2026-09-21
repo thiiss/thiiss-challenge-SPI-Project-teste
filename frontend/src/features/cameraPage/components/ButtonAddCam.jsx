@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Loader2, X } from 'lucide-react';
+import { Plus, Loader2, X, Webcam } from 'lucide-react';
 import { PopupModal, IconButtonModal } from '../../../components/shared';
 
 export function ButtonAddCam({
@@ -17,6 +17,8 @@ export function ButtonAddCam({
   const [ip, setIp] = useState('');
   const [papel, setPapel] = useState('frontal');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [usarWebcamLocal, setUsarWebcamLocal] = useState(false);
+  const [deviceIndex, setDeviceIndex] = useState('0');
 
   const setorJaTemFrontal = setor.trim()
     ? cameras.some((c) => c.setor?.trim().toLowerCase() === setor.trim().toLowerCase() && c.papel === 'frontal')
@@ -29,6 +31,8 @@ export function ButtonAddCam({
     setSetor('');
     setIp('');
     setPapel('frontal');
+    setUsarWebcamLocal(false);
+    setDeviceIndex('0');
     setIsSubmitting(false);
   };
 
@@ -52,10 +56,16 @@ export function ButtonAddCam({
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!nome.trim() || !setor.trim() || isSubmitting) return;
+    if (!usarWebcamLocal && !ip.trim()) return;
 
     setIsSubmitting(true);
 
-    const { ip: resolvedIp, streamUrl } = resolveIpAndStream(ip);
+    // Webcam local: streamUrl vira só o índice do dispositivo (ex: "0"), que o
+    // orquestrador reconhece e abre via cv2.VideoCapture local (ver orquestrador/main.py,
+    // _make_resolve_fn — mesma convenção do CAMERA_SOURCE de ambiente).
+    const { ip: resolvedIp, streamUrl } = usarWebcamLocal
+      ? { ip: 'local', streamUrl: String(parseInt(deviceIndex, 10) || 0) }
+      : resolveIpAndStream(ip);
 
     const newCamData = {
       nome: nome.trim(),
@@ -146,21 +156,56 @@ export function ButtonAddCam({
           </div>
 
           <div>
-            <label className="text-theme-head text-xs block mb-1 font-medium font-theme-title">
-              Endereço IP ou URL (RTSP/HTTP)
-            </label>
-            <input
-              type="text"
+            <button
+              type="button"
               disabled={isSubmitting}
-              value={ip}
-              onChange={(e) => setIp(e.target.value)}
-              placeholder="192.168.1.100 ou http://192.168.1.100:8080/video ou rtsp://admin:senha@192.168.1.100:554/onvif1"
-              className="w-full p-2.5 rounded-lg border border-theme-divider bg-[var(--p-bg)] text-theme-main text-xs focus:outline-none focus:border-[var(--p-subtext)] disabled:opacity-50 transition-colors font-mono"
-            />
-            <p className="text-theme-muted text-[10px] mt-1">
-              Cole a URL completa (com usuário/senha, se precisar) pra garantir que o caminho esteja certo. IP puro assume RTSP padrão.
-            </p>
+              onClick={() => setUsarWebcamLocal((v) => !v)}
+              className={`w-full flex items-center gap-2 p-2.5 rounded-lg border text-xs transition-colors disabled:opacity-50 ${
+                usarWebcamLocal
+                  ? 'border-[var(--p-subtext)] text-[var(--p-subtext)] bg-[var(--p-subtext)]/10'
+                  : 'border-theme-divider text-theme-muted'
+              }`}
+            >
+              <Webcam size={14} className="shrink-0" />
+              Usar webcam do notebook (em vez de câmera de rede)
+            </button>
           </div>
+
+          {usarWebcamLocal ? (
+            <div>
+              <label className="text-theme-head text-xs block mb-1 font-medium font-theme-title">
+                Índice do dispositivo
+              </label>
+              <input
+                type="number"
+                min="0"
+                disabled={isSubmitting}
+                value={deviceIndex}
+                onChange={(e) => setDeviceIndex(e.target.value)}
+                className="w-full p-2.5 rounded-lg border border-theme-divider bg-[var(--p-bg)] text-theme-main text-xs focus:outline-none focus:border-[var(--p-subtext)] disabled:opacity-50 transition-colors font-mono"
+              />
+              <p className="text-theme-muted text-[10px] mt-1">
+                Normalmente <strong>0</strong> é a webcam principal do notebook. Se tiver mais de uma câmera USB, tente 1, 2...
+              </p>
+            </div>
+          ) : (
+            <div>
+              <label className="text-theme-head text-xs block mb-1 font-medium font-theme-title">
+                Endereço IP ou URL (RTSP/HTTP)
+              </label>
+              <input
+                type="text"
+                disabled={isSubmitting}
+                value={ip}
+                onChange={(e) => setIp(e.target.value)}
+                placeholder="192.168.1.100 ou http://192.168.1.100:8080/video ou rtsp://admin:senha@192.168.1.100:554/onvif1"
+                className="w-full p-2.5 rounded-lg border border-theme-divider bg-[var(--p-bg)] text-theme-main text-xs focus:outline-none focus:border-[var(--p-subtext)] disabled:opacity-50 transition-colors font-mono"
+              />
+              <p className="text-theme-muted text-[10px] mt-1">
+                Cole a URL completa (com usuário/senha, se precisar) pra garantir que o caminho esteja certo. IP puro assume RTSP padrão.
+              </p>
+            </div>
+          )}
 
           <div>
             <label className="text-theme-head text-xs block mb-1 font-medium font-theme-title">

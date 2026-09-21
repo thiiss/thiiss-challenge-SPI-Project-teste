@@ -12,3 +12,6 @@ av>=11.0.0
 # Fallback pra câmeras RTSP que o PyAV/FFmpeg não consegue abrir de jeito nenhum
 # (ver ml_service/inference/vlc_camera.py).
 python-vlc>=3.0.0
+# Controla a tomada Tuya que corta energia em risco grave (queda/invasão de
+# zona) — ver orquestrador/hardware_alert.py.
+tinytuya>=1.13.0

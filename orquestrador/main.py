@@ -41,6 +41,7 @@ from pose_analyzer import PoseAnalyzer
 from zone_checker import ZoneChecker
 import config_server
 from config_server import epi_prefixes_ativos, ergonomia_ativa
+import hardware_alert
 
 # ── Configuração ───────────────────────────────────────────────────────────────
 BACKEND_URL        = "http://localhost:3000/api/detections"
@@ -346,7 +347,13 @@ def _make_resolve_fn(setor: str, papel: str, env_var: str | None = None, default
             sector_cams = [c for c in cameras if (c.get("setor") or "default") == setor]
             cam = next((c for c in sector_cams if c.get("papel") == papel), None)
             if cam:
-                return cam["streamUrl"]
+                stream_url = cam["streamUrl"]
+                # streamUrl puramente numérica ("0", "1", ...) = webcam local cadastrada
+                # pelo frontend — mesma convenção do CAMERA_SOURCE (ver acima) e do que
+                # Camera.__init__ espera (int → cv2.VideoCapture com CAP_DSHOW).
+                if isinstance(stream_url, str) and stream_url.isdigit():
+                    return int(stream_url)
+                return stream_url
         except Exception:
             pass
         return default
@@ -652,6 +659,15 @@ def _run_sector(
             zona_pessoas   = []
             zona_confirmed = False
 
+        # 3.5 Sinaleiro físico (ESP32) + tomada Tuya — ver orquestrador/hardware_alert.py.
+        # Queda/zona é "grave" (desliga a tomada); EPI ausente só alerta (buzzer/vermelho).
+        hardware_alert.report_sector(
+            setor,
+            epi_alert=bool(epi_confirmed),
+            grave_alert=bool(queda_confirmed or zona_confirmed),
+            pessoa_presente=bool(ergo_pessoas) or bool(epi_dets),
+        )
+
         # 4. Verdict em tempo real
         zona_em_risco = [p for p in zona_pessoas if p["invadiu"]]
         live_verdict  = _aggregate(epi_incidents, ergo_em_risco, zona_em_risco, epi_dets=epi_dets)
@@ -789,6 +805,7 @@ def _run_sector(
         lat_total_ms = (time.perf_counter() - t_start) * 1000
         _send_metrics(lat_total_ms, 0.0, lat_pose_ms, pck_pose, conf_media_epi, setor=setor)
 
+    hardware_alert.remover_setor(setor)
     print(f"[SETOR] '{setor}': pipeline encerrado.")
 
 
@@ -830,7 +847,10 @@ def _sector_manager(models: dict, inference_lock: threading.Lock, zone_checker: 
 
 def _start_sector(setor: str, cameras: list[dict], models: dict, inference_lock: threading.Lock, zone_checker: ZoneChecker):
     stop_event = threading.Event()
-    cam_ids    = frozenset((c["id"], c.get("papel", "frontal")) for c in cameras)
+    # Mesma fórmula de _sector_manager (3 campos) — precisa bater exatamente, senão
+    # a comparação de mudança nunca dá igual e reinicia o pipeline a cada checagem
+    # (30s), mesmo sem nenhuma câmera ter mudado de verdade.
+    cam_ids    = frozenset((c["id"], c.get("papel", "frontal"), c.get("streamUrl", "")) for c in cameras)
     t = threading.Thread(
         target=_run_sector,
         args=(setor, cameras, models, inference_lock, zone_checker, stop_event),
