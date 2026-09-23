@@ -32,7 +32,7 @@ import requests
 import tinytuya
 
 # ── Mesmo hardware da Fase 03 — atualizar aqui se IP/credenciais mudarem ────
-ESP_IP         = os.getenv("ESP_IP", "10.14.22.245")  # sobrescreva com a env ESP_IP ao trocar de wifi
+ESP_IP         = os.getenv("ESP_IP", "10.198.250.62")  # sobrescreva com a env ESP_IP ao trocar de wifi
 
 # Tomadas cadastradas — pra usar outra, troque PLUG_ATIVA (ou defina a variável
 # de ambiente PLUG_ATIVA antes de subir o orquestrador).
@@ -43,14 +43,14 @@ PLUGS = {
         "ip":        "10.243.226.25",
         "version":   3.4,
     },
-    "teste": {  # AVATTO Wifi Smart Socket 16A (devices.json)
-        "device_id": "eb219b887f024de065iisy",
-        "local_key": "~V:DsDQufnj3I=Vz",
-        "ip":        os.getenv("PLUG_TESTE_IP", "10.14.22.247"),  # muda a cada wifi (python -m tinytuya scan)
-        "version":   3.4,
+    "teste": {  # T34-Smart Plug+ (Tuya Cloud: SPI Project US)
+        "device_id": "eba85c7e51378b7ad12xhi",
+        "local_key": "ArUzydq7bje~NBUp",
+        "ip":        os.getenv("PLUG_TESTE_IP", "10.198.250.89"),  # muda a cada wifi (python -m tinytuya scan)
+        "version":   3.5,
     },
 }
-PLUG_ATIVA = os.getenv("PLUG_ATIVA", "principal")
+PLUG_ATIVA = os.getenv("PLUG_ATIVA", "teste")
 if PLUG_ATIVA not in PLUGS:
     raise ValueError(f"PLUG_ATIVA='{PLUG_ATIVA}' inválida — opções: {', '.join(PLUGS)}")
 
@@ -61,12 +61,27 @@ CLEAR_FRAMES_TO_GREEN = 15
 
 
 # ── ESP32 (HTTP) ─────────────────────────────────────────────────────────────
+# Cada notify_esp_* é chamado a partir de uma thread nova (ver report_sector) e,
+# sem essa trava, um ESP32 fora do ar empilha uma thread bloqueada (timeout=2s)
+# por chamada — com 4 setores ativos chamando report_sector a cada frame, isso
+# já chegou a empilhar ~300 threads numa sessão e derrubou a leitura de TODAS
+# as câmeras (inclusive a webcam local, sem nenhuma dependência de rede) por
+# pressão de CPU/memória. Mesmo padrão de trava que _plug_busy já usa pra Tuya.
+_esp_busy = threading.Event()
+
+
 def notify_esp_led(led: str, state: str) -> None:
+    if _esp_busy.is_set():
+        print(f"[ESP32] aviso ({led} {state}) ignorado — chamada anterior ainda em andamento")
+        return
+    _esp_busy.set()
     try:
         r = requests.post(f"http://{ESP_IP}/led", json={"led": led, "state": state}, timeout=2)
         print(f"[ESP32] {led} -> {state}: {r.status_code}")
     except requests.exceptions.RequestException as e:
         print(f"[ESP32] falha ao avisar ({led} {state}): {e}")
+    finally:
+        _esp_busy.clear()
 
 
 def notify_esp_alert():

@@ -661,10 +661,16 @@ def _run_sector(
 
         # 3.5 Sinaleiro físico (ESP32) + tomada Tuya — ver orquestrador/hardware_alert.py.
         # Queda/zona é "grave" (desliga a tomada); EPI ausente só alerta (buzzer/vermelho).
+        # Usa o risco AO VIVO do frame (epi_incidents/queda_detectada/zona_pessoas), não
+        # os *_confirmed (debounce com cooldown de dezenas de frames pra log de incidente
+        # no banco) — senão o vermelho acende só no frame de confirmação e nos frames
+        # seguintes, em cooldown, report_sector recebe grave_alert=False mesmo com a
+        # pessoa ainda na zona, o que soma _clear_streak e derruba pro verde no meio do
+        # risco: sinaleiro pisca vermelho/verde sem parar e o buzzer não tem tempo de soar.
         hardware_alert.report_sector(
             setor,
-            epi_alert=bool(epi_confirmed),
-            grave_alert=bool(queda_confirmed or zona_confirmed),
+            epi_alert=bool(epi_incidents),
+            grave_alert=bool(queda_detectada or any(p["invadiu"] for p in zona_pessoas)),
             pessoa_presente=bool(ergo_pessoas) or bool(epi_dets),
         )
 

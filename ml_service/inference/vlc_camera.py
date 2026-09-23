@@ -48,7 +48,11 @@ class VLCCamera:
         # (i5, 8GB RAM) satura fácil e trava o resto (browser, inferência).
         self._instance = vlc.Instance("--quiet", "--no-audio", "--avcodec-hw=any")
         self._player = self._instance.media_player_new()
-        media = self._instance.media_new(url)
+        # :rtsp-tcp força o RTP (vídeo) a trafegar na mesma conexão TCP do RTSP,
+        # em vez de UDP — necessário em redes que liberam o handshake RTSP mas
+        # bloqueiam/descartam UDP (ex: rede de sala/campus compartilhada), onde
+        # a câmera "conecta" mas nenhum frame novo chega depois do primeiro.
+        media = self._instance.media_new(url, ":rtsp-tcp")
         self._player.set_media(media)
         self._player.video_set_format("RV32", width, height, width * 4)
 
@@ -103,7 +107,23 @@ class VLCCamera:
         pass
 
     def release(self):
+        # stop() só pausa a reprodução — sem release() nos objetos nativos do
+        # libvlc, cada reconexão (ver _capture_loop._reconnect) cria uma
+        # Instance/MediaPlayer nova e a antiga nunca libera a memória do
+        # processo. Numa rede instável, com reconexões frequentes, isso vaza
+        # memória até o processo ficar tão pesado que TODAS as câmeras somem
+        # de uma vez (inclusive a webcam local, sem nenhuma dependência de
+        # rede) por falta de CPU/memória — visto na prática: >4GB numa sessão
+        # que começa em ~1.2GB.
         try:
             self._player.stop()
+        except Exception:
+            pass
+        try:
+            self._player.release()
+        except Exception:
+            pass
+        try:
+            self._instance.release()
         except Exception:
             pass

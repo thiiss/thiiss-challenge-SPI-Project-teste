@@ -20,6 +20,20 @@
     "ergonomia": true
   },
   "teste": {
+    "epis": [
+      "oculos"
+    ],
+    "ergonomia": true
+  },
+  "camera 2": {
+    "epis": [],
+    "ergonomia": true
+  },
+  "camera 4": {
+    "epis": [],
+    "ergonomia": true
+  },
+  "camera 1": {
     "epis": [],
     "ergonomia": true
   }
